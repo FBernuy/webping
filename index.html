@@ -493,6 +493,8 @@
 // Browsers cannot send ICMP. A sample is an HTTPS round trip to a public DNS resolver.
 const TIMEOUT_MS = 5000;
 const KEEP_MS = 60 * 60 * 1000;
+const PERSIST_DELAY_MS = 10000;
+const MAX_BODY_BYTES = 64 * 1024;
 const STORAGE_KEY = 'webping.v1';
 const RANGES = { '1m': 60 * 1000, '5m': 5 * 60 * 1000, '1h': KEEP_MS };
 const RANGE_LABEL = { '1m': 'Last 1 minute', '5m': 'Last 5 minutes', '1h': 'Last hour' };
@@ -538,6 +540,8 @@ const state = {
   last: { google: null, cloudflare: null },
   saveTimer: 0,
   raf: 0,
+  scrollTimer: 0,
+  statsTimer: 0,
   view: { w: 0, h: 0, dpr: 1 },
   frame: null,
   lastStat: 0,
@@ -756,8 +760,8 @@ function persistNow() {
 }
 
 function persistSoon() {
-  clearTimeout(state.saveTimer);
-  state.saveTimer = setTimeout(persistNow, 1000);
+  if (state.saveTimer) return;
+  state.saveTimer = setTimeout(persistNow, PERSIST_DELAY_MS);
 }
 
 function load() {
@@ -828,8 +832,24 @@ function wakeAll() {
   }
 }
 
-async function drain(res) {
-  try { await res.arrayBuffer(); } catch { /* ignore a cancelled body */ }
+async function consumeBody(res) {
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    if (res.body) await res.body.cancel();
+    return false;
+  }
+  if (!res.body) return true;
+  const reader = res.body.getReader();
+  let received = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) return true;
+    received += value.byteLength;
+    if (received > MAX_BODY_BYTES) {
+      await reader.cancel();
+      return false;
+    }
+  }
 }
 
 async function probe(target) {
@@ -845,18 +865,18 @@ async function probe(target) {
       cache: 'no-store',
       mode: 'cors',
       credentials: 'omit',
+      redirect: 'error',
       referrerPolicy: 'no-referrer',
       priority: 'high',
       headers: target.headers,
       signal: ctrl.signal,
     });
-    if (!res.ok) {
-      reason = 'http';
-      await drain(res);
-    } else {
-      await drain(res);
+    const accepted = await consumeBody(res);
+    if (res.ok && accepted) {
       ms = Math.round((performance.now() - t0) * 10) / 10;
       reason = 'ok';
+    } else {
+      reason = 'http';
     }
   } catch (err) {
     reason = err && err.name === 'AbortError' ? 'timeout' : 'error';
@@ -916,12 +936,15 @@ function start() {
   syncChrome();
   for (const target of TARGETS) ensureRunner(target);
   requestDraw();
+  armStats();
 }
 
 function pause() {
   if (!state.running) return;
   state.running = false;
   state.pausedAt = Date.now();
+  clearScrollTimer();
+  clearStatsTimer();
   wakeAll();
   syncChrome();
   renderStats(true);
@@ -1021,8 +1044,47 @@ function measure() {
   state.view = { w, h, dpr };
 }
 
+function clearScrollTimer() {
+  if (!state.scrollTimer) return;
+  clearTimeout(state.scrollTimer);
+  state.scrollTimer = 0;
+}
+
+function clearStatsTimer() {
+  if (!state.statsTimer) return;
+  clearTimeout(state.statsTimer);
+  state.statsTimer = 0;
+}
+
+function msUntilPixel() {
+  const plotW = state.frame && state.frame.plot.w;
+  if (!plotW || plotW < 20) return 100;
+  return Math.max(16, RANGES[state.range] / plotW);
+}
+
+// The time axis moves while a run is active. Schedule the next frame for when
+// that axis has shifted by at least one pixel, instead of redrawing every frame.
+function armScrollDraw() {
+  if (state.scrollTimer || state.raf || !state.running || document.hidden) return;
+  state.scrollTimer = setTimeout(() => {
+    state.scrollTimer = 0;
+    requestDraw();
+  }, msUntilPixel());
+}
+
+function armStats() {
+  if (state.statsTimer || !state.running || document.hidden) return;
+  state.statsTimer = setTimeout(() => {
+    state.statsTimer = 0;
+    if (!state.running || document.hidden) return;
+    renderStats(false);
+    armStats();
+  }, 200);
+}
+
 function requestDraw() {
   if (state.raf || document.hidden) return;
+  clearScrollTimer();
   state.raf = requestAnimationFrame(frame);
 }
 
@@ -1030,9 +1092,7 @@ function frame() {
   state.raf = 0;
   draw();
   renderStats(false);
-  if (!document.hidden && (state.running || pointer.inside)) {
-    state.raf = requestAnimationFrame(frame);
-  }
+  if (state.running && !document.hidden) armScrollDraw();
 }
 
 function draw() {
@@ -1312,12 +1372,12 @@ el.canvas.addEventListener('pointermove', (event) => {
   pointer.inside = true;
   pointer.x = event.offsetX;
   pointer.y = event.offsetY;
-  if (!state.running) requestDraw();
+  requestDraw();
 });
 el.canvas.addEventListener('pointerleave', () => {
   pointer.inside = false;
   el.tip.hidden = true;
-  if (!state.running) requestDraw();
+  requestDraw();
 });
 
 document.addEventListener('visibilitychange', () => {
@@ -1325,8 +1385,11 @@ document.addEventListener('visibilitychange', () => {
     persistNow();
     if (state.raf) cancelAnimationFrame(state.raf);
     state.raf = 0;
+    clearScrollTimer();
+    clearStatsTimer();
   } else {
     requestDraw();
+    if (state.running) armStats();
   }
 });
 window.addEventListener('pagehide', persistNow);
