@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#090b0a">
+<title>WebPing</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23090b0a'/><polyline points='1,12 4,7 7,9 11,3 15,5' fill='none' stroke='%23c8f542' stroke-width='1.5' stroke-linejoin='round' stroke-linecap='round'/></svg>">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #090b0a;
+    --panel: #101411;
+    --edge: #243028;
+    --text: #e7f0e4;
+    --muted: #9aaf9e;
+    --dim: #6d7f72;
+    --google: #c8f542;
+    --cloudflare: #3ec6ff;
+    --red: #ff5d4a;
+    --font: ui-sans-serif, "Segoe UI", "Avenir Next", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(900px 420px at 0% 0%, rgba(200, 245, 66, 0.05), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button, input { font: inherit; color: inherit; }
+
+  button {
+    background: #0c100e;
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+
+  button:hover { border-color: #3c5244; }
+
+  button:focus-visible,
+  input:focus-visible {
+    outline: 2px solid var(--google);
+    outline-offset: 2px;
+  }
+
+  button[aria-pressed="true"] {
+    background: #1a2414;
+    border-color: #6e8c3c;
+    color: var(--google);
+  }
+
+  .app {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 18px 18px;
+    gap: 14px;
+  }
+
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 20px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 650;
+    letter-spacing: 0.22em;
+  }
+
+  .led {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--dim);
+    box-shadow: none;
+  }
+
+  .led.on { background: var(--google); box-shadow: 0 0 8px var(--google); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .led.on { animation: pulse 1.8s ease-in-out infinite; }
+  }
+
+  @keyframes pulse {
+    50% { opacity: 0.4; }
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .interval {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .interval input {
+    width: 4.6rem;
+    background: #0c100e;
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ranges { display: flex; }
+
+  .ranges button {
+    border-radius: 0;
+    margin-left: -1px;
+    min-width: 4.5rem;
+  }
+
+  .ranges button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+  .ranges button:last-child { border-radius: 0 4px 4px 0; }
+
+  #run { min-width: 5.5rem; }
+
+  main {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 14px;
+  }
+
+  .plot {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 12px 10px;
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .plot-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+  }
+
+  .plot-bar h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--muted);
+    font-size: 12px;
+    font-family: var(--mono);
+  }
+
+  .legend li { display: flex; align-items: center; gap: 7px; }
+  .legend li.off { opacity: 0.35; }
+
+  .swatch {
+    width: 14px;
+    height: 3px;
+    border-radius: 1px;
+    background: var(--c, var(--muted));
+  }
+
+  .swatch.loss {
+    width: 2px;
+    height: 12px;
+    border-radius: 0;
+    background: var(--red);
+  }
+
+  .plot-canvas {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+  }
+
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+    touch-action: none;
+  }
+
+  #tip {
+    position: absolute;
+    z-index: 2;
+    pointer-events: none;
+    min-width: 180px;
+    padding: 8px 10px;
+    background: rgba(8, 10, 9, 0.94);
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #tip[hidden] { display: none !important; }
+
+  #tip-time {
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  #tip-rows { display: flex; flex-direction: column; gap: 3px; }
+
+  #tip-rows div {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  aside {
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-left: 3px solid var(--series, var(--edge));
+    border-radius: 6px;
+    padding: 12px 14px 8px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .card[data-target="google"] { --series: var(--google); }
+  .card[data-target="cloudflare"] { --series: var(--cloudflare); }
+
+  .card-h {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .card-h h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  .card-h p {
+    margin: 1px 0 0;
+    color: var(--dim);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .mark {
+    width: 8px;
+    height: 8px;
+    margin-top: 5px;
+    border-radius: 50%;
+    background: var(--series);
+    flex: none;
+  }
+
+  .plot-toggle {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .plot-toggle:has(input:not(:checked)) { opacity: 0.45; }
+
+  #toggle-google { accent-color: var(--google); }
+  #toggle-cloudflare { accent-color: var(--cloudflare); }
+
+  .current {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin: 12px 0 0;
+    font-family: var(--mono);
+    font-size: 40px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+    color: var(--series);
+  }
+
+  .current.is-loss { color: var(--red); font-size: 32px; letter-spacing: 0.04em; }
+  .current.is-empty { color: var(--dim); }
+
+  .unit { font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+
+  .reason {
+    min-height: 1.2em;
+    margin: 6px 0 4px;
+    color: var(--dim);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .reason.warn { color: var(--red); }
+
+  .stat {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0;
+    padding: 7px 0;
+    border-top: 1px solid #1c2620;
+    font-size: 13px;
+  }
+
+  .stat dt { color: var(--muted); }
+  .stat dd {
+    margin: 0;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat dd.bad { color: var(--red); }
+
+  .foot {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    color: var(--dim);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .foot p { margin: 0; }
+
+  #stored { font-family: var(--mono); }
+
+  #clear { min-width: 8.5rem; }
+
+  @media (max-width: 860px) {
+    body { overflow: auto; }
+    .app { height: auto; min-height: 100dvh; }
+    main { grid-template-columns: 1fr; }
+    .plot { min-height: 320px; }
+    .plot-canvas { min-height: 240px; }
+    .foot { margin-top: 4px; }
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1 class="brand"><span class="led" id="led"></span>WEBPING</h1>
+      <div class="controls">
+        <label class="interval">
+          Interval
+          <input id="interval" type="number" min="0.25" max="60" step="0.25" value="1" inputmode="decimal" autocomplete="off" aria-label="Ping interval in seconds">
+          s
+        </label>
+        <div class="ranges" role="group" aria-label="Time window">
+          <button type="button" data-range="1m" aria-pressed="true" title="Show the last minute (1)">1 min</button>
+          <button type="button" data-range="5m" aria-pressed="false" title="Show the last 5 minutes (5)">5 min</button>
+          <button type="button" data-range="1h" aria-pressed="false" title="Show the last hour (H)">1 hour</button>
+        </div>
+        <button type="button" id="run" aria-pressed="true" title="Pause or resume (Space)">Pause</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="plot" aria-labelledby="plot-title">
+        <div class="plot-bar">
+          <h2 id="plot-title">Last 1 minute</h2>
+          <ul class="legend">
+            <li id="legend-google"><i class="swatch" style="--c: var(--google)"></i> 8.8.8.8</li>
+            <li id="legend-cloudflare"><i class="swatch" style="--c: var(--cloudflare)"></i> 1.1.1.1</li>
+            <li><i class="swatch loss"></i> Loss</li>
+          </ul>
+        </div>
+        <div class="plot-canvas" id="plot-wrap">
+          <canvas id="plot" aria-label="Line chart of latency. Minimum, average, maximum, and loss are listed beside the chart."></canvas>
+          <div id="tip" hidden>
+            <div id="tip-time"></div>
+            <div id="tip-rows"></div>
+          </div>
+        </div>
+      </section>
+
+      <aside>
+        <article class="card" data-target="google">
+          <header class="card-h">
+            <span class="mark" aria-hidden="true"></span>
+            <div>
+              <h2>Google DNS</h2>
+              <p>8.8.8.8 · dns.google</p>
+            </div>
+            <label class="plot-toggle">
+              <input id="toggle-google" type="checkbox" checked data-target="google">
+              Plot
+            </label>
+          </header>
+          <p class="current is-empty" id="current-wrap-google"><span id="current-google">—</span><span class="unit" id="unit-google" hidden>ms</span></p>
+          <p class="reason" id="reason-google"></p>
+          <dl>
+            <div class="stat"><dt>Min</dt><dd id="min-google">—</dd></div>
+            <div class="stat"><dt>Avg</dt><dd id="avg-google">—</dd></div>
+            <div class="stat"><dt>Max</dt><dd id="max-google">—</dd></div>
+            <div class="stat"><dt title="Failed requests and requests slower than 5 seconds">Loss</dt><dd id="loss-google">—</dd></div>
+          </dl>
+        </article>
+
+        <article class="card" data-target="cloudflare">
+          <header class="card-h">
+            <span class="mark" aria-hidden="true"></span>
+            <div>
+              <h2>Cloudflare</h2>
+              <p>1.1.1.1 · cloudflare-dns.com</p>
+            </div>
+            <label class="plot-toggle">
+              <input id="toggle-cloudflare" type="checkbox" checked data-target="cloudflare">
+              Plot
+            </label>
+          </header>
+          <p class="current is-empty" id="current-wrap-cloudflare"><span id="current-cloudflare">—</span><span class="unit" id="unit-cloudflare" hidden>ms</span></p>
+          <p class="reason" id="reason-cloudflare"></p>
+          <dl>
+            <div class="stat"><dt>Min</dt><dd id="min-cloudflare">—</dd></div>
+            <div class="stat"><dt>Avg</dt><dd id="avg-cloudflare">—</dd></div>
+            <div class="stat"><dt>Max</dt><dd id="max-cloudflare">—</dd></div>
+            <div class="stat"><dt title="Failed requests and requests slower than 5 seconds">Loss</dt><dd id="loss-cloudflare">—</dd></div>
+          </dl>
+        </article>
+
+        <div class="foot">
+          <p>Each point is an HTTPS round trip from this browser. ICMP ping is not available to web pages, so Google Public DNS and Cloudflare 1.1.1.1 are measured over DNS-over-HTTPS. A failed request, or one that takes longer than 5 seconds, counts as loss. Min, average, and max skip those samples. The last hour is kept in this browser and restored on reload.</p>
+          <p id="stored">Nothing stored yet</p>
+          <button type="button" id="clear">Clear history</button>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+<script>
+'use strict';
+
+// Browsers cannot send ICMP. A sample is an HTTPS round trip to a public DNS resolver.
+const TIMEOUT_MS = 5000;
+const KEEP_MS = 60 * 60 * 1000;
+const STORAGE_KEY = 'webping.v1';
+const RANGES = { '1m': 60 * 1000, '5m': 5 * 60 * 1000, '1h': KEEP_MS };
+const RANGE_LABEL = { '1m': 'Last 1 minute', '5m': 'Last 5 minutes', '1h': 'Last hour' };
+
+const TARGETS = [
+  {
+    id: 'google',
+    name: '8.8.8.8',
+    color: '#c8f542',
+    headers: { Accept: 'application/dns-json' },
+    url(bust) {
+      return `https://dns.google/resolve?name=example.com&type=A&_r=${bust}`;
+    },
+  },
+  {
+    id: 'cloudflare',
+    name: '1.1.1.1',
+    color: '#3ec6ff',
+    headers: { Accept: 'application/dns-json' },
+    url(bust) {
+      return `https://cloudflare-dns.com/dns-query?name=example.com&type=A&_r=${bust}`;
+    },
+  },
+];
+
+const COLOR = {
+  bg: '#101411',
+  grid: 'rgba(200, 245, 66, 0.09)',
+  axis: '#9aaf9e',
+  frame: '#243028',
+  loss: 'rgba(255, 93, 74, 0.7)',
+  cross: 'rgba(231, 240, 228, 0.35)',
+  empty: '#9aaf9e',
+};
+
+const state = {
+  running: false,
+  pausedAt: null,
+  intervalMs: 1000,
+  range: '1m',
+  hidden: new Set(),
+  samples: { google: [], cloudflare: [] },
+  last: { google: null, cloudflare: null },
+  saveTimer: 0,
+  raf: 0,
+  view: { w: 0, h: 0, dpr: 1 },
+  frame: null,
+  lastStat: 0,
+  clearArmed: 0,
+};
+
+const runners = new Set();
+const wakes = new Map();
+let seq = 0;
+
+const el = {
+  led: document.getElementById('led'),
+  interval: document.getElementById('interval'),
+  run: document.getElementById('run'),
+  plotTitle: document.getElementById('plot-title'),
+  plotWrap: document.getElementById('plot-wrap'),
+  canvas: document.getElementById('plot'),
+  tip: document.getElementById('tip'),
+  tipTime: document.getElementById('tip-time'),
+  tipRows: document.getElementById('tip-rows'),
+  stored: document.getElementById('stored'),
+  clear: document.getElementById('clear'),
+  ranges: [...document.querySelectorAll('.ranges button')],
+  legend: {
+    google: document.getElementById('legend-google'),
+    cloudflare: document.getElementById('legend-cloudflare'),
+  },
+};
+
+const ctx = el.canvas.getContext('2d');
+const pointer = { inside: false, x: 0, y: 0 };
+const fields = {};
+
+for (const target of TARGETS) {
+  fields[target.id] = {
+    wrap: document.getElementById(`current-wrap-${target.id}`),
+    current: document.getElementById(`current-${target.id}`),
+    unit: document.getElementById(`unit-${target.id}`),
+    reason: document.getElementById(`reason-${target.id}`),
+    min: document.getElementById(`min-${target.id}`),
+    avg: document.getElementById(`avg-${target.id}`),
+    max: document.getElementById(`max-${target.id}`),
+    loss: document.getElementById(`loss-${target.id}`),
+    toggle: document.getElementById(`toggle-${target.id}`),
+  };
+}
+
+function clampInterval(ms) {
+  return Math.min(60000, Math.max(250, Math.round(ms)));
+}
+
+function formatSeconds(ms) {
+  return String(Math.round(ms / 10) / 100);
+}
+
+function viewNow() {
+  return state.running || state.pausedAt == null ? Date.now() : state.pausedAt;
+}
+
+function lowerBound(arr, t) {
+  let lo = 0;
+  let hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid][0] < t) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function nearestSample(arr, t) {
+  if (!arr.length) return null;
+  let i = lowerBound(arr, t);
+  if (i >= arr.length) i = arr.length - 1;
+  if (i > 0 && Math.abs(arr[i - 1][0] - t) < Math.abs(arr[i][0] - t)) i -= 1;
+  return arr[i];
+}
+
+function eachInWindow(id, t0, t1, fn) {
+  const arr = state.samples[id];
+  for (let i = lowerBound(arr, t0); i < arr.length && arr[i][0] <= t1; i += 1) fn(arr[i]);
+}
+
+function prune(now) {
+  const cutoff = now - KEEP_MS;
+  for (const target of TARGETS) {
+    const arr = state.samples[target.id];
+    let i = 0;
+    while (i < arr.length && arr[i][0] < cutoff) i += 1;
+    if (i) arr.splice(0, i);
+    if (arr.length > 20000) arr.splice(0, arr.length - 20000);
+  }
+}
+
+function windowStats(id, t0, t1) {
+  let n = 0;
+  let lost = 0;
+  let min = Infinity;
+  let max = -Infinity;
+  let sum = 0;
+  let ok = 0;
+  eachInWindow(id, t0, t1, (sample) => {
+    n += 1;
+    if (sample[1] == null) {
+      lost += 1;
+      return;
+    }
+    ok += 1;
+    sum += sample[1];
+    if (sample[1] < min) min = sample[1];
+    if (sample[1] > max) max = sample[1];
+  });
+  return {
+    n,
+    lost,
+    min: ok ? min : null,
+    max: ok ? max : null,
+    avg: ok ? sum / ok : null,
+  };
+}
+
+function formatMs(value, digits) {
+  if (value == null || !Number.isFinite(value)) return '—';
+  const shown = digits ? value.toFixed(digits) : String(Math.round(value));
+  return `${shown} ms`;
+}
+
+function formatAge(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.round(m / 60)}h`;
+}
+
+function reasonText(reason) {
+  if (reason === 'timeout') return 'timed out';
+  if (reason === 'http') return 'request failed';
+  if (reason === 'error') return 'no response';
+  return '';
+}
+
+function renderStats(force) {
+  const nowMs = performance.now();
+  if (!force && nowMs - state.lastStat < 200) return;
+  state.lastStat = nowMs;
+
+  const now = viewNow();
+  const span = RANGES[state.range];
+  const t0 = now - span;
+
+  for (const target of TARGETS) {
+    const ui = fields[target.id];
+    const stats = windowStats(target.id, t0, now);
+    const last = state.last[target.id];
+    const loss = !!(last && last.ms == null);
+    ui.wrap.classList.toggle('is-loss', loss);
+    ui.wrap.classList.toggle('is-empty', !last);
+    ui.current.textContent = !last ? '—' : loss ? 'LOSS' : String(Math.round(last.ms));
+    ui.unit.hidden = !last || loss;
+
+    let detail = '';
+    let warn = false;
+    if (last && last.reason && last.reason !== 'ok') {
+      detail = reasonText(last.reason);
+      warn = true;
+    }
+    if (last) {
+      const age = now - last.t;
+      if (age > state.intervalMs * 2 + 750) {
+        detail = detail ? `${detail} · ${formatAge(age)} ago` : `${formatAge(age)} ago`;
+      }
+    }
+    ui.reason.textContent = detail;
+    ui.reason.classList.toggle('warn', warn);
+
+    ui.min.textContent = formatMs(stats.min, 1);
+    ui.avg.textContent = formatMs(stats.avg, 1);
+    ui.max.textContent = formatMs(stats.max, 1);
+    ui.loss.textContent = stats.n ? `${((stats.lost / stats.n) * 100).toFixed(1)}%` : '—';
+    ui.loss.title = stats.n ? `${stats.lost} of ${stats.n} requests` : '';
+    ui.loss.classList.toggle('bad', stats.n > 0 && stats.lost > 0);
+  }
+
+  const kept = TARGETS.reduce((n, target) => n + state.samples[target.id].length, 0);
+  el.stored.textContent = kept
+    ? `${kept.toLocaleString()} samples stored from the last hour`
+    : 'Nothing stored yet';
+}
+
+function snapshot() {
+  const samples = {};
+  for (const target of TARGETS) samples[target.id] = state.samples[target.id];
+  return {
+    v: 1,
+    intervalMs: state.intervalMs,
+    range: state.range,
+    hidden: [...state.hidden],
+    samples,
+  };
+}
+
+function persistNow() {
+  clearTimeout(state.saveTimer);
+  state.saveTimer = 0;
+  prune(Date.now());
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot()));
+  } catch {
+    for (const target of TARGETS) {
+      const arr = state.samples[target.id];
+      arr.splice(0, Math.ceil(arr.length / 4));
+    }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch { /* storage unavailable */ }
+  }
+}
+
+function persistSoon() {
+  clearTimeout(state.saveTimer);
+  state.saveTimer = setTimeout(persistNow, 1000);
+}
+
+function load() {
+  let data;
+  try {
+    data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+  } catch {
+    return;
+  }
+  if (!data || data.v !== 1) return;
+  if (typeof data.intervalMs === 'number' && Number.isFinite(data.intervalMs)) {
+    state.intervalMs = clampInterval(data.intervalMs);
+  }
+  if (RANGES[data.range]) state.range = data.range;
+  if (Array.isArray(data.hidden)) {
+    state.hidden = new Set(data.hidden.filter((id) => TARGETS.some((target) => target.id === id)));
+  }
+  const now = Date.now();
+  const cutoff = now - KEEP_MS;
+  for (const target of TARGETS) {
+    const raw = data.samples && data.samples[target.id];
+    if (!Array.isArray(raw)) continue;
+    const clean = [];
+    for (const sample of raw) {
+      if (!Array.isArray(sample) || typeof sample[0] !== 'number') continue;
+      if (sample[0] < cutoff || sample[0] > now + 1500) continue;
+      const ms = sample[1];
+      if (ms != null && (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0)) continue;
+      clean.push([sample[0], ms == null ? null : ms]);
+    }
+    clean.sort((a, b) => a[0] - b[0]);
+    state.samples[target.id] = clean;
+    const latest = clean[clean.length - 1];
+    if (latest) state.last[target.id] = { t: latest[0], ms: latest[1], reason: latest[1] == null ? 'error' : 'ok' };
+  }
+}
+
+function record(id, t, ms, reason) {
+  const arr = state.samples[id];
+  const sample = [t, ms];
+  if (!arr.length || arr[arr.length - 1][0] <= t) arr.push(sample);
+  else arr.splice(lowerBound(arr, t), 0, sample);
+  state.last[id] = { t, ms, reason };
+  prune(Date.now());
+  persistSoon();
+  renderStats(true);
+  requestDraw();
+}
+
+function sleep(ms, id) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(finish, Math.max(0, ms));
+    function finish() {
+      wakes.delete(id);
+      resolve();
+    }
+    wakes.set(id, () => {
+      clearTimeout(timer);
+      finish();
+    });
+  });
+}
+
+function wakeAll() {
+  for (const id of [...wakes.keys()]) {
+    const wake = wakes.get(id);
+    if (wake) wake();
+  }
+}
+
+async function drain(res) {
+  try { await res.arrayBuffer(); } catch { /* ignore a cancelled body */ }
+}
+
+async function probe(target) {
+  const sent = Date.now();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const t0 = performance.now();
+  let ms = null;
+  let reason = 'error';
+  try {
+    const res = await fetch(target.url(`${sent.toString(36)}${(seq += 1).toString(36)}`), {
+      method: 'GET',
+      cache: 'no-store',
+      mode: 'cors',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+      priority: 'high',
+      headers: target.headers,
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      reason = 'http';
+      await drain(res);
+    } else {
+      await drain(res);
+      ms = Math.round((performance.now() - t0) * 10) / 10;
+      reason = 'ok';
+    }
+  } catch (err) {
+    reason = err && err.name === 'AbortError' ? 'timeout' : 'error';
+  } finally {
+    clearTimeout(timer);
+  }
+  record(target.id, sent, ms, reason);
+}
+
+function ensureRunner(target) {
+  if (runners.has(target.id)) return;
+  runners.add(target.id);
+  runner(target);
+}
+
+async function runner(target) {
+  try {
+    while (state.running) {
+      const started = performance.now();
+      try {
+        await probe(target);
+      } catch {
+        if (!state.running) break;
+        await sleep(state.intervalMs, target.id);
+        continue;
+      }
+      while (state.running && performance.now() - started < state.intervalMs) {
+        await sleep(state.intervalMs - (performance.now() - started), target.id);
+      }
+    }
+  } finally {
+    runners.delete(target.id);
+  }
+  if (state.running) ensureRunner(target);
+}
+
+function syncChrome() {
+  if (document.activeElement !== el.interval) el.interval.value = formatSeconds(state.intervalMs);
+  el.plotTitle.textContent = RANGE_LABEL[state.range];
+  for (const button of el.ranges) {
+    button.setAttribute('aria-pressed', String(button.dataset.range === state.range));
+  }
+  el.run.textContent = state.running ? 'Pause' : 'Resume';
+  el.run.setAttribute('aria-pressed', String(state.running));
+  el.led.classList.toggle('on', state.running);
+  for (const target of TARGETS) {
+    const hidden = state.hidden.has(target.id);
+    const toggle = fields[target.id].toggle;
+    if (document.activeElement !== toggle) toggle.checked = !hidden;
+    el.legend[target.id].classList.toggle('off', hidden);
+  }
+}
+
+function start() {
+  state.running = true;
+  state.pausedAt = null;
+  syncChrome();
+  for (const target of TARGETS) ensureRunner(target);
+  requestDraw();
+}
+
+function pause() {
+  if (!state.running) return;
+  state.running = false;
+  state.pausedAt = Date.now();
+  wakeAll();
+  syncChrome();
+  renderStats(true);
+  requestDraw();
+}
+
+function toggleRun() {
+  if (state.running) pause();
+  else start();
+}
+
+function setRange(range) {
+  if (!RANGES[range] || range === state.range) return;
+  state.range = range;
+  syncChrome();
+  renderStats(true);
+  persistSoon();
+  requestDraw();
+}
+
+function setHidden(id, hidden) {
+  if (hidden) state.hidden.add(id);
+  else state.hidden.delete(id);
+  syncChrome();
+  persistSoon();
+  requestDraw();
+}
+
+function clearHistory() {
+  for (const target of TARGETS) {
+    state.samples[target.id] = [];
+    state.last[target.id] = null;
+  }
+  persistNow();
+  renderStats(true);
+  requestDraw();
+}
+
+function yTicks(max) {
+  const padded = Math.max(10, max) * 1.25;
+  const rough = padded / 4;
+  if (!Number.isFinite(rough) || rough <= 0) return { top: 100, ticks: [0, 25, 50, 75, 100] };
+  const pow = 10 ** Math.floor(Math.log10(rough));
+  const n = rough / pow;
+  const step = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * pow;
+  const count = Math.max(1, Math.ceil(padded / step - 1e-9));
+  const ticks = [];
+  for (let i = 0; i <= count; i += 1) ticks.push(Math.round(i * step * 1000) / 1000);
+  return { top: ticks[ticks.length - 1], ticks };
+}
+
+function timeTicks(t0, t1) {
+  const span = t1 - t0;
+  const step = span <= 60 * 1000 ? 15 * 1000 : span <= 5 * 60 * 1000 ? 60 * 1000 : 10 * 60 * 1000;
+  const ticks = [];
+  for (let t = Math.ceil(t0 / step) * step; t < t1; t += step) ticks.push(t);
+  return ticks;
+}
+
+function formatTick(t, span) {
+  const d = new Date(t);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return span <= 60 * 1000 ? `${hh}:${mm}:${ss}` : `${hh}:${mm}`;
+}
+
+function formatY(v) {
+  return Math.abs(v - Math.round(v)) < 0.01 ? String(Math.round(v)) : String(Math.round(v * 10) / 10);
+}
+
+function visibleMax(t0, t1) {
+  let max = 0;
+  let any = false;
+  for (const target of TARGETS) {
+    if (state.hidden.has(target.id)) continue;
+    eachInWindow(target.id, t0, t1, (sample) => {
+      if (sample[1] == null) return;
+      any = true;
+      if (sample[1] > max) max = sample[1];
+    });
+  }
+  return any ? Math.max(10, max) : 100;
+}
+
+function measure() {
+  const rect = el.plotWrap.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(rect.width));
+  const h = Math.max(1, Math.round(rect.height));
+  const bw = Math.round(w * dpr);
+  const bh = Math.round(h * dpr);
+  if (el.canvas.width !== bw || el.canvas.height !== bh) {
+    el.canvas.width = bw;
+    el.canvas.height = bh;
+  }
+  state.view = { w, h, dpr };
+}
+
+function requestDraw() {
+  if (state.raf || document.hidden) return;
+  state.raf = requestAnimationFrame(frame);
+}
+
+function frame() {
+  state.raf = 0;
+  draw();
+  renderStats(false);
+  if (!document.hidden && (state.running || pointer.inside)) {
+    state.raf = requestAnimationFrame(frame);
+  }
+}
+
+function draw() {
+  const { w, h, dpr } = state.view;
+  if (w < 20 || h < 20) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = COLOR.bg;
+  ctx.fillRect(0, 0, w, h);
+  ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+
+  const now = viewNow();
+  const span = RANGES[state.range];
+  const t0 = now - span;
+  const scale = yTicks(visibleMax(t0, now));
+  const left = Math.max(46, scale.ticks.reduce((m, v) => Math.max(m, ctx.measureText(formatY(v)).width), 0) + 14);
+  const plot = { x: left, y: 18, w: Math.max(0, w - left - 12), h: Math.max(0, h - 18 - 26) };
+  state.frame = { plot, t0, t1: now, span, yTop: scale.top };
+  if (plot.w < 20 || plot.h < 20) return;
+
+  const xOf = (t) => plot.x + ((t - t0) / span) * plot.w;
+  const yOf = (ms) => plot.y + plot.h - (ms / scale.top) * plot.h;
+
+  ctx.strokeStyle = COLOR.frame;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(plot.x + 0.5, plot.y + 0.5, plot.w - 1, plot.h - 1);
+
+  ctx.strokeStyle = COLOR.grid;
+  ctx.fillStyle = COLOR.axis;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.beginPath();
+  for (const v of scale.ticks) {
+    const y = yOf(v);
+    if (v !== 0 && v !== scale.top) {
+      ctx.moveTo(plot.x, y);
+      ctx.lineTo(plot.x + plot.w, y);
+    }
+    ctx.fillText(formatY(v), plot.x - 8, Math.min(plot.y + plot.h - 6, Math.max(plot.y + 6, y)));
+  }
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.beginPath();
+  for (const t of timeTicks(t0, now)) {
+    const x = xOf(t);
+    ctx.moveTo(x, plot.y);
+    ctx.lineTo(x, plot.y + plot.h);
+  }
+  ctx.stroke();
+  for (const t of timeTicks(t0, now)) {
+    const x = xOf(t);
+    if (x < plot.x + 32 || x > plot.x + plot.w - 32) continue;
+    ctx.fillText(formatTick(t, span), x, plot.y + plot.h + 8);
+  }
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('ms', 8, plot.y - 4);
+
+  const gap = Math.max(state.intervalMs * 2.5, TIMEOUT_MS + state.intervalMs);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plot.x, plot.y, plot.w, plot.h);
+  ctx.clip();
+
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = COLOR.loss;
+  ctx.beginPath();
+  let losses = 0;
+  let successes = 0;
+  for (const target of TARGETS) {
+    if (state.hidden.has(target.id)) continue;
+    eachInWindow(target.id, t0, now, (sample) => {
+      if (sample[1] == null) {
+        losses += 1;
+        const x = xOf(sample[0]);
+        ctx.moveTo(x, plot.y);
+        ctx.lineTo(x, plot.y + plot.h);
+      } else {
+        successes += 1;
+      }
+    });
+  }
+  ctx.stroke();
+
+  for (const target of TARGETS) {
+    if (state.hidden.has(target.id)) continue;
+    ctx.beginPath();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = target.color;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    const plotted = [];
+    let drawing = false;
+    let prevT = null;
+    eachInWindow(target.id, t0, now, (sample) => {
+      if (sample[1] == null) {
+        drawing = false;
+        prevT = sample[0];
+        return;
+      }
+      const x = xOf(sample[0]);
+      const y = yOf(sample[1]);
+      const separated = !drawing || (prevT != null && sample[0] - prevT > gap);
+      if (separated) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+      plotted.push({ x, y, separated });
+      drawing = true;
+      prevT = sample[0];
+    });
+    ctx.stroke();
+
+    const arr = state.samples[target.id];
+    const spacing = plot.w / Math.max(1, span / state.intervalMs);
+    ctx.fillStyle = target.color;
+    for (let i = 0; i < plotted.length; i += 1) {
+      const point = plotted[i];
+      const nextBreaks = i === plotted.length - 1 || plotted[i + 1].separated;
+      if (spacing > 10 || (point.separated && nextBreaks)) {
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    for (let i = arr.length - 1; i >= 0; i -= 1) {
+      if (arr[i][0] < t0 || arr[i][0] > now || arr[i][1] == null) continue;
+      ctx.beginPath();
+      ctx.fillStyle = target.color;
+      ctx.arc(xOf(arr[i][0]), yOf(arr[i][1]), 3.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = COLOR.bg;
+      ctx.stroke();
+      break;
+    }
+  }
+
+  if (pointer.inside && pointer.x >= plot.x && pointer.x <= plot.x + plot.w && pointer.y >= plot.y && pointer.y <= plot.y + plot.h) {
+    ctx.beginPath();
+    ctx.strokeStyle = COLOR.cross;
+    ctx.lineWidth = 1;
+    ctx.moveTo(pointer.x + 0.5, plot.y);
+    ctx.lineTo(pointer.x + 0.5, plot.y + plot.h);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  const anyVisible = TARGETS.some((target) => !state.hidden.has(target.id));
+  if (!anyVisible || (successes === 0 && losses === 0)) {
+    ctx.fillStyle = COLOR.empty;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(
+      anyVisible ? 'No samples in this window yet' : 'Turn a plot back on to see latency',
+      plot.x + plot.w / 2,
+      plot.y + plot.h / 2,
+    );
+  }
+
+  updateTip();
+}
+
+function updateTip() {
+  const frame = state.frame;
+  if (!pointer.inside || !frame) {
+    el.tip.hidden = true;
+    return;
+  }
+  const { plot, t0, t1, span } = frame;
+  if (pointer.x < plot.x || pointer.x > plot.x + plot.w || pointer.y < plot.y || pointer.y > plot.y + plot.h) {
+    el.tip.hidden = true;
+    return;
+  }
+  const t = t0 + ((pointer.x - plot.x) / plot.w) * span;
+  const slack = Math.max(state.intervalMs * 0.75, (span / plot.w) * 10);
+  const rows = [];
+  for (const target of TARGETS) {
+    if (state.hidden.has(target.id)) continue;
+    const sample = nearestSample(state.samples[target.id], t);
+    if (!sample || sample[0] < t0 || sample[0] > t1 || Math.abs(sample[0] - t) > slack) continue;
+    rows.push({
+      name: target.name,
+      color: target.color,
+      value: sample[1] == null ? 'loss' : `${sample[1].toFixed(1)} ms`,
+    });
+  }
+  if (!rows.length) {
+    el.tip.hidden = true;
+    return;
+  }
+  const timeLabel = new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const signature = `${timeLabel}|${rows.map((row) => `${row.name}:${row.value}`).join('|')}`;
+  if (el.tip.dataset.sig !== signature) {
+    el.tip.dataset.sig = signature;
+    el.tipTime.textContent = timeLabel;
+    el.tipRows.replaceChildren();
+    for (const row of rows) {
+      const line = document.createElement('div');
+      const name = document.createElement('span');
+      name.textContent = row.name;
+      name.style.color = row.color;
+      const value = document.createElement('span');
+      value.textContent = row.value;
+      line.append(name, value);
+      el.tipRows.append(line);
+    }
+  }
+  el.tip.hidden = false;
+  const wrapW = el.plotWrap.clientWidth;
+  const wrapH = el.plotWrap.clientHeight;
+  const tipW = el.tip.offsetWidth;
+  const tipH = el.tip.offsetHeight;
+  let left = pointer.x + 14;
+  let top = pointer.y + 14;
+  if (left + tipW > wrapW - 8) left = pointer.x - tipW - 12;
+  if (top + tipH > wrapH - 8) top = pointer.y - tipH - 12;
+  el.tip.style.left = `${Math.max(8, left)}px`;
+  el.tip.style.top = `${Math.max(8, top)}px`;
+}
+
+el.interval.addEventListener('focus', () => el.interval.select());
+el.interval.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
+el.interval.addEventListener('input', () => {
+  const sec = Number(el.interval.value);
+  if (!Number.isFinite(sec)) return;
+  const next = clampInterval(sec * 1000);
+  if (next === state.intervalMs) return;
+  state.intervalMs = next;
+  wakeAll();
+  persistSoon();
+});
+el.interval.addEventListener('blur', () => {
+  el.interval.value = formatSeconds(state.intervalMs);
+});
+
+for (const button of el.ranges) {
+  button.addEventListener('click', () => setRange(button.dataset.range));
+}
+
+el.run.addEventListener('click', toggleRun);
+
+for (const target of TARGETS) {
+  fields[target.id].toggle.addEventListener('change', (event) => {
+    setHidden(target.id, !event.target.checked);
+  });
+}
+
+el.clear.addEventListener('click', () => {
+  const now = Date.now();
+  if (now - state.clearArmed > 3000) {
+    state.clearArmed = now;
+    el.clear.textContent = 'Confirm clear';
+    setTimeout(() => {
+      if (el.clear.textContent === 'Confirm clear') el.clear.textContent = 'Clear history';
+    }, 3000);
+    return;
+  }
+  state.clearArmed = 0;
+  el.clear.textContent = 'Clear history';
+  clearHistory();
+});
+
+document.addEventListener('keydown', (event) => {
+  const tag = event.target && event.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
+  if (event.key === ' ') {
+    event.preventDefault();
+    toggleRun();
+  } else if (event.key === '1') setRange('1m');
+  else if (event.key === '5') setRange('5m');
+  else if (event.key === 'h' || event.key === 'H') setRange('1h');
+});
+
+el.canvas.addEventListener('pointermove', (event) => {
+  pointer.inside = true;
+  pointer.x = event.offsetX;
+  pointer.y = event.offsetY;
+  if (!state.running) requestDraw();
+});
+el.canvas.addEventListener('pointerleave', () => {
+  pointer.inside = false;
+  el.tip.hidden = true;
+  if (!state.running) requestDraw();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    persistNow();
+    if (state.raf) cancelAnimationFrame(state.raf);
+    state.raf = 0;
+  } else {
+    requestDraw();
+  }
+});
+window.addEventListener('pagehide', persistNow);
+
+new ResizeObserver(() => {
+  measure();
+  requestDraw();
+}).observe(el.plotWrap);
+
+load();
+syncChrome();
+renderStats(true);
+measure();
+requestDraw();
+start();
+</script>
+</body>
+</html>
